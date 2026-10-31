@@ -151,11 +151,18 @@ echo "[Info] Using Java: $JAVA_VERSION_OUTPUT"
 # ------------------------------------------------------------------------------
 JAR_FILE="target/notes-simple-0.0.1-SNAPSHOT.jar"
 if [ -f "$JAR_FILE" ] && [ "$1" != "--build" ]; then
-    echo "[Info] Launching pre-built JAR: $JAR_FILE"
-    if [ -n "$PROFILE_ARG" ]; then
-        exec java -Dspring.profiles.active=local -jar "$JAR_FILE"
+    # Invalidate stale jar if any source files or pom.xml are newer than the jar
+    NEWER_SOURCES=$(find src pom.xml -newer "$JAR_FILE" 2>/dev/null | head -n 1 || true)
+    if [ -n "$NEWER_SOURCES" ]; then
+        echo "[Info] Code updates detected ($NEWER_SOURCES). Recompiling..."
+        rm -f "$JAR_FILE"
     else
-        exec java -jar "$JAR_FILE"
+        echo "[Info] Launching pre-built JAR: $JAR_FILE"
+        if [ -n "$PROFILE_ARG" ]; then
+            exec java -Dspring.profiles.active=local -jar "$JAR_FILE"
+        else
+            exec java -jar "$JAR_FILE"
+        fi
     fi
 fi
 
