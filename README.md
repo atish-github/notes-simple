@@ -94,17 +94,26 @@ git clone https://github.com/atish-github/notes-simple.git
 cd notes-simple
 ```
 
-### 3. Start Backend:
+### 3. Start Both Services in Background (Recommended):
 ```bash
-./start-backend.sh
+./start-all.sh
 ```
-*(If PostgreSQL is not running in Termux, the script automatically uses the embedded in-memory H2 profile so you don't even need to configure a database!)*
+- Automatically runs both backend and frontend as background daemons.
+- On Android Termux, automatically calls `termux-wake-lock` to keep the phone's CPU alive.
+- Check live logs: `tail -f logs/backend.log` or `tail -f logs/frontend.log`
+- To stop everything cleanly:
+```bash
+./stop-all.sh
+```
 
-### 4. Start Frontend (Optional for dev hot-reload):
+### 4. Or Start Individually:
 ```bash
-./start-frontend.sh
+# Start Backend in foreground or background:
+./start-backend.sh &
+
+# Start Frontend in foreground or background:
+./start-frontend.sh &
 ```
-*(Bound to `0.0.0.0:5173` so you can open it in Chrome on your phone or on any other device on your local Wi-Fi).*
 
 ---
 

@@ -35,3 +35,4 @@ ENV SERVER_PORT=8080 \
     SPRING_DATASOURCE_PASSWORD=postgres
 
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
+

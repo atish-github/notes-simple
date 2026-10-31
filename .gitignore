@@ -24,5 +24,9 @@ yarn-error.log*
 .vscode/
 .DS_Store
 Thumbs.db
+# Runtime & Background logs
 *.log
+logs/
+.*.pid
+*.pid
 
