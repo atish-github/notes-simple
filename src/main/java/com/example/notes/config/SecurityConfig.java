@@ -41,10 +41,12 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(AbstractHttpConfigurer::disable) // Handled at HIGHEST_PRECEDENCE by CustomCorsFilter
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Always permit preflight OPTIONS requests from any origin
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // Public authentication endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         // Swagger & OpenAPI documentation
