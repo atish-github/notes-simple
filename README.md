@@ -63,6 +63,21 @@ When the backend starts up, it automatically creates the default administrator a
 
 ---
 
+## 🐳 Running with Docker (Recommended for Desktop / Servers)
+
+You can run the entire stack (PostgreSQL + Spring Boot + React Frontend) with one single command:
+
+```bash
+# Option A: Using the start script with --docker flag
+./start-backend.sh --docker
+
+# Option B: Directly via Docker Compose
+docker compose up --build -d
+```
+Once up, access the complete application at **`http://localhost:8080`**.
+
+---
+
 ## 📱 Running on Android Phone via Termux
 
 You can run both backend and frontend directly on your Android device using [Termux](https://termux.dev):
