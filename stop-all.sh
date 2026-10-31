@@ -62,6 +62,16 @@ if command -v termux-wake-unlock >/dev/null 2>&1; then
     echo "[Info] Termux wake-lock released."
 fi
 
+# Stop Termux PostgreSQL if running
+if [ -n "$TERMUX_VERSION" ] && command -v pg_ctl >/dev/null 2>&1; then
+    PG_DATA="${PREFIX:-/data/data/com.termux/files/usr}/var/lib/postgresql"
+    if [ -f "$PG_DATA/postmaster.pid" ]; then
+        echo "[Info] Stopping Termux PostgreSQL..."
+        pg_ctl -D "$PG_DATA" stop || true
+    fi
+fi
+
 echo "============================================="
 echo "  All background services stopped."
 echo "============================================="
+

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # start-backend.sh
-# Starts the Spring Boot backend API server.
-# Supports Docker Compose, Android Termux, and macOS/Linux native environments.
+# Starts the Spring Boot backend API server with automated PostgreSQL setup.
+# Fully automated for Android Phone (Termux), Docker, and macOS/Linux.
 # ==============================================================================
 
 set -e
@@ -15,7 +15,7 @@ echo "  Starting Notes Simple Backend"
 echo "============================================="
 
 # ------------------------------------------------------------------------------
-# 1. Check if user wants full Docker deployment (--docker)
+# 1. Full Docker deployment check (--docker / -d)
 # ------------------------------------------------------------------------------
 if [ "$1" = "--docker" ] || [ "$1" = "-d" ]; then
     echo "[Info] Launching full application stack using Docker Compose..."
@@ -30,7 +30,7 @@ if [ "$1" = "--docker" ] || [ "$1" = "-d" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 2. Detect Environment (Termux vs Desktop)
+# 2. Detect Environment
 # ------------------------------------------------------------------------------
 IS_TERMUX=false
 if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux" ]; then
@@ -38,61 +38,94 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux" ]; then
     echo "[Info] Environment detected: Android Termux"
 fi
 
+# Port check function (uses bash built-in /dev/tcp - requires no netcat or external tools)
+is_postgres_up() {
+    (timeout 1 bash -c "</dev/tcp/127.0.0.1/5432" 2>/dev/null) || \
+    (bash -c "(echo > /dev/tcp/127.0.0.1/5432)" 2>/dev/null)
+}
+
 # ------------------------------------------------------------------------------
-# 3. Smart Database Setup (Docker -> Native Postgres -> Termux -> In-memory H2)
+# 3. Automated PostgreSQL Setup & Lifecycle
 # ------------------------------------------------------------------------------
 PROFILE_ARG=""
 
 if [ "$1" = "--local" ] || [ "$1" = "-l" ]; then
-    echo "[Info] Using embedded local H2 database profile (--local)."
+    echo "[Info] Explicit local flag detected: using embedded in-memory H2 database."
     PROFILE_ARG="-Dspring-boot.run.profiles=local"
 else
-    # Check if PostgreSQL is reachable on 5432
-    is_postgres_up() {
-        if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 5432 2>/dev/null; then
-            return 0
-        elif command -v pg_isready >/dev/null 2>&1 && pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
-            return 0
-        fi
-        return 1
-    }
-
-    if is_postgres_up; then
-        echo "[Info] PostgreSQL is active on port 5432."
-    else
-        echo "[Warn] PostgreSQL not detected on port 5432."
-
-        # Attempt A: If Docker is available and running, spin up Postgres via docker compose
-        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            echo "[Info] Docker detected! Starting PostgreSQL container via docker compose..."
-            docker compose up -d postgres
-            echo "[Info] Waiting for PostgreSQL container to be ready..."
-            for i in {1..15}; do
-                if is_postgres_up; then
-                    echo "[Info] PostgreSQL container is ready!"
-                    break
-                fi
-                sleep 1
-            done
+    # ----------------------------------------------------
+    # Case A: Android Termux automated PostgreSQL setup
+    # ----------------------------------------------------
+    if [ "$IS_TERMUX" = true ]; then
+        # 1. Ensure PostgreSQL is installed in Termux
+        if ! command -v initdb >/dev/null 2>&1 || ! command -v pg_ctl >/dev/null 2>&1; then
+            echo "[Info] Installing PostgreSQL in Termux (pkg install -y postgresql)..."
+            pkg install -y postgresql || true
         fi
 
-        # Attempt B: If in Termux, try starting native Termux PostgreSQL service
-        if [ "$IS_TERMUX" = true ] && ! is_postgres_up; then
-            PG_DIR="$PREFIX/var/lib/postgresql"
-            if command -v pg_ctl >/dev/null 2>&1 && [ -d "$PG_DIR" ]; then
-                echo "[Info] Attempting to start PostgreSQL service in Termux (pg_ctl)..."
-                pg_ctl -D "$PG_DIR" -l "$PREFIX/var/log/pgsql.log" start || true
+        PG_DATA="${PREFIX:-/data/data/com.termux/files/usr}/var/lib/postgresql"
+        PG_LOG_DIR="${PREFIX:-/data/data/com.termux/files/usr}/var/log"
+
+        # 2. Initialize database cluster if not already done
+        if command -v initdb >/dev/null 2>&1; then
+            if [ ! -f "$PG_DATA/PG_VERSION" ]; then
+                echo "[Info] Initializing PostgreSQL database cluster in Termux..."
+                mkdir -p "$PG_DATA"
+                mkdir -p "$PG_LOG_DIR"
+                initdb -D "$PG_DATA" --auth-local=trust --auth-host=trust || initdb -D "$PG_DATA" || true
+            fi
+        fi
+
+        # 3. Start PostgreSQL server if not currently running
+        if ! is_postgres_up; then
+            if command -v pg_ctl >/dev/null 2>&1 && [ -f "$PG_DATA/PG_VERSION" ]; then
+                echo "[Info] Starting PostgreSQL service in Termux..."
+                mkdir -p "$PG_LOG_DIR"
+                pg_ctl -D "$PG_DATA" -l "$PG_LOG_DIR/postgresql.log" -w start || pg_ctl -D "$PG_DATA" -l "$PG_LOG_DIR/postgresql.log" start || true
                 sleep 2
             fi
         fi
 
-        # Final Check: If still not up, fallback to embedded H2
-        if ! is_postgres_up; then
-            echo "[Notice] PostgreSQL is not running. Automatically falling back to in-memory H2 profile."
-            echo "         (Data will be stored in-memory without needing a separate database service)."
-            echo "         To run with PostgreSQL, start Docker or use: pkg install postgresql on Termux."
-            PROFILE_ARG="-Dspring-boot.run.profiles=local"
+        # 4. Ensure 'postgres' user with password 'postgres' and database 'notes_db' exist
+        if is_postgres_up; then
+            echo "[Info] Ensuring PostgreSQL 'postgres' user and 'notes_db' database exist..."
+            psql -h 127.0.0.1 -d postgres -c "CREATE USER postgres WITH PASSWORD 'postgres' SUPERUSER;" 2>/dev/null || \
+            psql -d postgres -c "CREATE USER postgres WITH PASSWORD 'postgres' SUPERUSER;" 2>/dev/null || \
+            psql -d postgres -c "ALTER USER postgres WITH PASSWORD 'postgres';" 2>/dev/null || true
+
+            psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE notes_db OWNER postgres;" 2>/dev/null || \
+            psql -d postgres -c "CREATE DATABASE notes_db OWNER postgres;" 2>/dev/null || \
+            createdb notes_db 2>/dev/null || true
         fi
+
+    # ----------------------------------------------------
+    # Case B: Desktop (Docker / Native Postgres)
+    # ----------------------------------------------------
+    else
+        if ! is_postgres_up; then
+            if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+                echo "[Info] Docker detected. Starting PostgreSQL container via docker compose..."
+                docker compose up -d postgres
+                for i in 1 2 3 4 5 6 7 8 9 10; do
+                    if is_postgres_up; then
+                        break
+                    fi
+                    sleep 1
+                done
+            fi
+        fi
+    fi
+
+    # ----------------------------------------------------
+    # Verification
+    # ----------------------------------------------------
+    if is_postgres_up; then
+        echo "[Success] PostgreSQL is running on port 5432! Using PostgreSQL database."
+    else
+        echo "[Warn] Could not start or connect to PostgreSQL on port 5432."
+        echo "       Falling back to embedded in-memory H2 profile."
+        echo "       (To run PostgreSQL on Termux manually: 'pkg install postgresql && initdb $PREFIX/var/lib/postgresql && pg_ctl -D $PREFIX/var/lib/postgresql start')"
+        PROFILE_ARG="-Dspring-boot.run.profiles=local"
     fi
 fi
 
@@ -103,7 +136,7 @@ if ! command -v java >/dev/null 2>&1; then
     echo "[Error] Java runtime not found."
     if [ "$IS_TERMUX" = true ]; then
         echo "[Hint] Install OpenJDK on Termux by running:"
-        echo "       pkg install openjdk-21"
+        echo "       pkg install -y openjdk-21"
     else
         echo "[Hint] Ensure Java 21+ is installed and present in your PATH."
     fi
@@ -114,7 +147,7 @@ JAVA_VERSION_OUTPUT=$(java -version 2>&1 | head -n 1)
 echo "[Info] Using Java: $JAVA_VERSION_OUTPUT"
 
 # ------------------------------------------------------------------------------
-# 5. Launch Backend (Pre-built JAR or Maven)
+# 5. Launch Spring Boot
 # ------------------------------------------------------------------------------
 JAR_FILE="target/notes-simple-0.0.1-SNAPSHOT.jar"
 if [ -f "$JAR_FILE" ] && [ "$1" != "--build" ]; then
@@ -134,7 +167,7 @@ elif [ -x "./mvnw" ]; then
 else
     echo "[Error] Neither 'mvn' nor executable './mvnw' found."
     if [ "$IS_TERMUX" = true ]; then
-        echo "[Hint] Install maven by running: pkg install maven"
+        echo "[Hint] Install maven by running: pkg install -y maven"
     fi
     exit 1
 fi
