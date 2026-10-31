@@ -61,3 +61,4 @@ echo ""
 echo "  To stop all services:"
 echo "    ./stop-all.sh"
 echo "============================================="
+
