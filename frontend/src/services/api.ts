@@ -1,6 +1,22 @@
 import { AuthResponse, Note, NotesGroup, User } from '../types';
 
-const API_BASE_URL = '/api';
+/**
+ * Dynamically resolves the API base URL:
+ * - If VITE_API_URL is specified, use it.
+ * - If running on Vite dev server (port 5173 or 3000), call Spring Boot backend directly on port 8080 of the same host.
+ * - Otherwise (served directly by Spring Boot on port 8080 in production), use relative '/api'.
+ */
+const getApiBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined' && (window.location.port === '5173' || window.location.port === '3000')) {
+    return `${window.location.protocol}//${window.location.hostname}:8080/api`;
+  }
+  return '/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
